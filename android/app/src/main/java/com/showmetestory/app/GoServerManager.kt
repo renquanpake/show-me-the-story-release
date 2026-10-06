@@ -2,7 +2,6 @@ package com.showmetestory.app
 
 import android.content.Context
 import java.io.File
-import java.io.FileOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.TimeUnit
@@ -10,12 +9,15 @@ import java.util.concurrent.TimeUnit
 enum class ServerState { STARTING, READY }
 
 /**
- * Owns the bundled Go server: extracts it from assets into app-private
- * storage, marks it executable, spawns it as a child process, and polls the
- * loopback port until the server accepts connections.
+ * Owns the bundled Go server: locates the native library that the package
+ * manager extracted into nativeLibraryDir, spawns it as a child process, and
+ * polls the loopback port until the server accepts connections.
  *
  * The binary is a fully static AArch64 ELF (CGO_ENABLED=0, no PT_DYNAMIC,
- * no PT_INTERP), so it needs no libc or interpreter on the device.
+ * no PT_INTERP) packaged as jniLibs/arm64-v8a/libserver.so. On Android 10+
+ * SELinux W^X denies execve() for app_data_file, so the binary must run from
+ * nativeLibraryDir (exec_type label); extracting it to filesDir would fail
+ * with EACCES regardless of file mode bits.
  */
 class GoServerManager(
     private val context: Context,
@@ -28,16 +30,11 @@ class GoServerManager(
     private var stopped = false
 
     fun start(onState: (ServerState) -> Unit, onFailure: (String) -> Unit) {
-        val bin = extractBinary()
+        val bin = locateBinary()
             ?: run {
-                onFailure("无法从内置资源释放服务端程序：assets/bin/$BINARY_NAME 缺失或损坏")
+                onFailure("找不到内置服务端程序：$BINARY_NAME 未随包安装到 nativeLibraryDir")
                 return
             }
-
-        if (!bin.setExecutable(true, false)) {
-            onFailure("无法设置可执行权限：${bin.absolutePath}")
-            return
-        }
 
         val dataDir = context.filesDir.absolutePath
         val logFile = File(dataDir, "server.out")
@@ -97,37 +94,11 @@ class GoServerManager(
         false
     }
 
-    /** Copies assets/bin/<BINARY> to filesDir/bin, reusing a size-matched cached copy. */
-    private fun extractBinary(): File? {
-        val dir = File(context.filesDir, "bin")
-        if (!dir.exists() && !dir.mkdirs()) return null
-        val target = File(dir, BINARY_NAME)
-        val tmp = File(dir, "$BINARY_NAME.tmp")
-
-        val size = try {
-            context.assets.openFd("bin/$BINARY_NAME").use { it.length }
-        } catch (_: Exception) {
-            return null
-        }
-
-        if (target.exists() && target.length() == size) return target
-
-        val ok = try {
-            context.assets.open("bin/$BINARY_NAME").use { input ->
-                FileOutputStream(tmp).use { output -> input.copyTo(output) }
-            }
-            tmp.setExecutable(true, false)
-            if (target.exists()) target.delete()
-            tmp.renameTo(target)
-        } catch (_: Exception) {
-            false
-        }
-
-        if (!ok || target.length() != size) {
-            runCatching { tmp.delete() }
-            return null
-        }
-        return target
+    /** Resolves the native library extracted by the package manager at install time. */
+    private fun locateBinary(): File? {
+        val dir = context.applicationInfo.nativeLibraryDir ?: return null
+        val bin = File(dir, BINARY_NAME)
+        return if (bin.exists() && bin.length() > 0) bin else null
     }
 
     private fun tail(file: File): String {
@@ -143,7 +114,7 @@ class GoServerManager(
         const val DEFAULT_PORT = 48090
         const val HOST = "127.0.0.1"
         const val URL = "http://$HOST:$DEFAULT_PORT/"
-        private const val BINARY_NAME = "show-me-the-story"
+        private const val BINARY_NAME = "libserver.so"
         private const val PROBE_TIMEOUT_MS = 60_000L
         private const val CONNECT_TIMEOUT_MS = 1_000
         private const val POLL_INTERVAL_MS = 400L

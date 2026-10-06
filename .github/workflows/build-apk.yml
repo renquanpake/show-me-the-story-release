@@ -58,15 +58,15 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: |
-          mkdir -p android/app/src/main/assets/bin
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
           GOOS=linux GOARCH=arm64 go build -trimpath \
             -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
-            -o android/app/src/main/assets/bin/show-me-the-story .
-          ls -lh android/app/src/main/assets/bin/show-me-the-story
+            -o android/app/src/main/jniLibs/arm64-v8a/libserver.so .
+          ls -lh android/app/src/main/jniLibs/arm64-v8a/libserver.so
 
-      - name: Verify binary is static AArch64
+      - name: Verify binary is static AArch64 and 16KB aligned
         run: |
-          BIN=android/app/src/main/assets/bin/show-me-the-story
+          BIN=android/app/src/main/jniLibs/arm64-v8a/libserver.so
           readelf -h "$BIN" | grep -E 'Class|Machine'
           readelf -l  "$BIN" | grep -E 'LOAD|INTERP|DYNAMIC' || true
           if readelf -d "$BIN" 2>&1 | grep -qi 'no dynamic section'; then
@@ -81,6 +81,14 @@ jobs:
             echo "ERROR: not an AArch64 binary" >&2
             exit 1
           fi
+          for A in $(readelf -lW "$BIN" | awk '/^ *LOAD/{print $NF}'); do
+            v=$((A))
+            if [ "$v" -lt 16384 ] || [ $((v % 16384)) -ne 0 ]; then
+              echo "ERROR: LOAD alignment $A fails the Android 15 16KB page requirement" >&2
+              exit 1
+            fi
+          done
+          echo "OK: LOAD segments are 16KB page-aligned"
 
       # --- 3. Android packaging ------------------------------------------
       - name: Setup Java 17

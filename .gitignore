@@ -8,3 +8,4 @@ frontend/dist
 showmethestory
 dev.log
 graphify-out/
+android/**/*.so
