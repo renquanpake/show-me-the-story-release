@@ -90,7 +90,7 @@ class GoServerManager(
 
     private fun portOpen(): Boolean = try {
         Socket().use { s ->
-            s.connect(InetSocketAddress(HOST, port), PROBE_TIMEOUT_MS)
+            s.connect(InetSocketAddress(HOST, port), CONNECT_TIMEOUT_MS)
             true
         }
     } catch (_: Exception) {
@@ -105,7 +105,7 @@ class GoServerManager(
         val tmp = File(dir, "$BINARY_NAME.tmp")
 
         val size = try {
-            context.assets.open("bin/$BINARY_NAME").use { it.length() }
+            context.assets.length("bin/$BINARY_NAME")
         } catch (_: Exception) {
             return null
         }
@@ -145,6 +145,7 @@ class GoServerManager(
         const val URL = "http://$HOST:$DEFAULT_PORT/"
         private const val BINARY_NAME = "show-me-the-story"
         private const val PROBE_TIMEOUT_MS = 60_000L
+        private const val CONNECT_TIMEOUT_MS = 1_000
         private const val POLL_INTERVAL_MS = 400L
         private const val STOP_WAIT_SECONDS = 2L
         private const val JOIN_TIMEOUT_MS = 300L

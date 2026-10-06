@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
@@ -102,7 +101,6 @@ class MainActivity : Activity() {
         )
     }
 
-    @Deprecated("Kept for pre-Android 13 back navigation on WebView history.")
     override fun onBackPressed() {
         if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
@@ -114,7 +112,7 @@ class MainActivity : Activity() {
     }
 
     companion object {
-        private const val SPLASH_HTML = """
+        private val SPLASH_HTML = """
             <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
             <style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
             font-family:system-ui,-apple-system,sans-serif;background:#0f1115;color:#e6e8ee}
