@@ -105,7 +105,7 @@ class GoServerManager(
         val tmp = File(dir, "$BINARY_NAME.tmp")
 
         val size = try {
-            context.assets.length("bin/$BINARY_NAME")
+            context.assets.openFd("bin/$BINARY_NAME").use { it.length }
         } catch (_: Exception) {
             return null
         }
