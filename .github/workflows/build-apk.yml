@@ -1,0 +1,119 @@
+name: Build Android Release APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'frontend/**'
+      - 'internal/**'
+      - '*.go'
+      - 'go.mod'
+      - '.github/workflows/build-apk.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # --- 1. Frontend (embedded into the Go binary at build time) --------
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          test -f dist/index.html
+          find dist -type f | sort
+
+      # --- 2. Go server, cross-compiled for Android ARM64 ----------------
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Cross-compile ARM64 server binary
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p android/app/src/main/assets/bin
+          GOOS=linux GOARCH=arm64 go build -trimpath \
+            -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
+            -o android/app/src/main/assets/bin/show-me-the-story .
+          ls -lh android/app/src/main/assets/bin/show-me-the-story
+
+      - name: Verify binary is static AArch64
+        run: |
+          BIN=android/app/src/main/assets/bin/show-me-the-story
+          readelf -h "$BIN" | grep -E 'Class|Machine'
+          readelf -l  "$BIN" | grep -E 'LOAD|INTERP|DYNAMIC' || true
+          if readelf -d "$BIN" 2>&1 | grep -qi 'no dynamic section'; then
+            echo "OK: statically linked, no interpreter required"
+          else
+            echo "ERROR: binary needs dynamic linking; it cannot run on Android" >&2
+            exit 1
+          fi
+          if readelf -h "$BIN" | grep -q 'AArch64'; then
+            echo "OK: AArch64"
+          else
+            echo "ERROR: not an AArch64 binary" >&2
+            exit 1
+          fi
+
+      # --- 3. Android packaging ------------------------------------------
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Verify Android SDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          test -n "${ANDROID_HOME}" || { echo "ANDROID_HOME not set" >&2; exit 1; }
+          ls "${ANDROID_HOME}/platforms" 2>/dev/null || true
+
+      - name: Build Android release APK
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          find app/build/outputs/apk -type f -name '*.apk' -ls
+
+      - name: Package artifact as ShowMeTheStory-release.apk
+        run: |
+          APK=$(find android/app/build/outputs/apk -name '*.apk' | head -1)
+          test -n "$APK" || { echo "no APK produced" >&2; exit 1; }
+          cp "$APK" ./ShowMeTheStory-release.apk
+          ls -lh ./ShowMeTheStory-release.apk
+          sha256sum ./ShowMeTheStory-release.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShowMeTheStory-release.apk
+          path: ShowMeTheStory-release.apk
+          if-no-files-found: error
+          retention-days: 90

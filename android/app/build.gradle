@@ -1,0 +1,52 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.showmetestory.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.showmetestory.app'
+        minSdk 24
+        targetSdk 35
+        versionCode 403
+        versionName '4.0.3'
+    }
+
+    buildTypes {
+        // Release uses the debug keystore so the APK installs on a phone
+        // without any external private key. Sign with a real release key
+        // before publishing to the Play Store.
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.debug
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    packaging {
+        resources.excludes += [
+            'META-INF/DEPENDENCIES',
+            'META-INF/LICENSE',
+            'META-INF/LICENSE.md',
+            'META-INF/LICENSE.txt',
+            'META-INF/NOTICE',
+            'META-INF/NOTICE.md',
+            'META-INF/NOTICE.txt'
+        ]
+    }
+}
